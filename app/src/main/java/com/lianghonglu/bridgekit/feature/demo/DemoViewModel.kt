@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * BridgeKit Demo 的 MVVM 状态持有者。
@@ -28,9 +29,10 @@ class DemoViewModel : ViewModel() {
     }
 
     private fun appendLog(message: String) {
-        mutableUiState.value = mutableUiState.value.copy(
-            logs = (mutableUiState.value.logs + message).takeLast(MAX_LOGS),
-        )
+        // JS 注入接口不保证主线程；update 以原子方式避免并发事件丢失日志。
+        mutableUiState.update { state ->
+            state.copy(logs = (state.logs + message).takeLast(MAX_LOGS))
+        }
     }
 
     private companion object {

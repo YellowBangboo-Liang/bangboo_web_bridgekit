@@ -18,6 +18,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lianghonglu.bridgekit.bridge.BridgeMethodHandler
 import com.lianghonglu.bridgekit.container.BridgeWebView
 import com.lianghonglu.bridgekit.ui.theme.BridgeKitTheme
@@ -32,6 +35,7 @@ import com.lianghonglu.bridgekit.ui.theme.BridgeKitTheme
 fun DemoRoute(viewModel: DemoViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val webView = remember(context) {
         BridgeWebView(context).apply {
             registerDemoCapabilities(viewModel)
@@ -42,7 +46,20 @@ fun DemoRoute(viewModel: DemoViewModel = viewModel()) {
             loadLocalH5()
         }
     }
-    DisposableEffect(webView) { onDispose { webView.release() } }
+    DisposableEffect(webView, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> webView.onResume()
+                Lifecycle.Event.ON_PAUSE -> webView.onPause()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            webView.release()
+        }
+    }
     DemoScreen(uiState, {
         viewModel.recordNativeEventSent("native.greeting")
         webView.callJsMethod("native.greeting", mapOf("message" to "Hello from Jetpack Compose")) {

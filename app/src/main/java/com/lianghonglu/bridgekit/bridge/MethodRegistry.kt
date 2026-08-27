@@ -1,5 +1,7 @@
 package com.lianghonglu.bridgekit.bridge
 
+import java.util.concurrent.ConcurrentHashMap
+
 /**
  * JSBridge 原生能力注册表。
  *
@@ -21,7 +23,8 @@ fun interface BridgeMethodHandler {
  * 业务层可在 Activity、Fragment 或 ViewModel 所管理的协调器中注册方法；容器仅负责转发。
  */
 class MethodRegistry {
-    private val handlers = mutableMapOf<String, BridgeMethodHandler>()
+    // @JavascriptInterface 可能不在主线程调用，因此不能使用普通 MutableMap。
+    private val handlers = ConcurrentHashMap<String, BridgeMethodHandler>()
 
     fun register(method: String, handler: BridgeMethodHandler) {
         handlers[method] = handler

@@ -1,6 +1,7 @@
 package com.lianghonglu.bridgekit.bridge
 
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Native → JS 异步回调注册表。
@@ -9,7 +10,8 @@ import java.util.concurrent.atomic.AtomicLong
  * 回调在消费时立即移除，避免同一结果多次触发，也便于容器销毁时统一清理。
  */
 class CallbackRegistry {
-    private val callbacks = mutableMapOf<String, (BridgeResponse) -> Unit>()
+    // Native 与 JS 回传可能来自不同线程；ConcurrentHashMap 保证一次性 consume 的原子移除。
+    private val callbacks = ConcurrentHashMap<String, (BridgeResponse) -> Unit>()
     private val next = AtomicLong(0)
 
     /** 在单个进程内生成唯一 callbackId；前缀同时让协议日志更易辨识。 */

@@ -14,6 +14,8 @@ import com.lianghonglu.bridgekit.bridge.NativeBridge
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
+import java.io.ByteArrayInputStream
+import java.util.ArrayDeque
 
 /**
  * 可复用且只加载可信内置内容的 WebView / JSBridge 容器。
@@ -31,6 +33,9 @@ class BridgeWebView @JvmOverloads constructor(
     var onSchemeAction: ((action: String, parameter: String?) -> Unit)? = null
 
     private val json = Json { ignoreUnknownKeys = true }
+    // 仅在 WebView UI 线程访问：页面 reload / bootstrap 尚未完成时暂存 Native 事件。
+    private val pendingNativeMessages = ArrayDeque<String>()
+    private var bridgeReady = false
 
     /** 供宿主注册 JS → Native 能力，也负责 Native → JS 主动调用。 */
     val jsBridge = JsBridge(::dispatchNativeMessage)
@@ -45,6 +50,7 @@ class BridgeWebView @JvmOverloads constructor(
     /** 加载 assets/h5 下的内置页面；不接受路径分隔符，杜绝目录穿越。 */
     fun loadLocalH5(assetName: String = DEFAULT_ASSET) {
         require(isSafeAssetName(assetName)) { "Invalid local asset name" }
+        bridgeReady = false
         loadUrl("$LOCAL_H5_SCHEME://$assetName")
     }
 
@@ -109,7 +115,11 @@ class BridgeWebView @JvmOverloads constructor(
             request: WebResourceRequest,
         ): WebResourceResponse? {
             val url = request.url
-            if (url.scheme != LOCAL_H5_SCHEME) return null
+            // addJavascriptInterface 会被所有 frame 看到；阻断远程子资源/iframe，
+            // 防止受信任的离线页面意外引入第三方内容后扩大接口暴露面。
+            if (url.scheme != LOCAL_H5_SCHEME) {
+                return if (url.scheme == "http" || url.scheme == "https") emptyResponse() else null
+            }
             val asset = url.host.orEmpty()
             if (!isSafeAssetName(asset)) return null
             return runCatching {
@@ -126,28 +136,40 @@ class BridgeWebView @JvmOverloads constructor(
 
     /** 注入脚本具有幂等保护；只在受信任的本地页面加载完成后执行。 */
     private fun injectBootstrap() {
-        evaluateJavascript(BRIDGE_BOOTSTRAP_JS, null)
+        evaluateJavascript(BRIDGE_BOOTSTRAP_JS) {
+            bridgeReady = true
+            while (pendingNativeMessages.isNotEmpty()) dispatchNow(pendingNativeMessages.removeFirst())
+        }
     }
 
     /** 将 JsBridge 的 JSON 协议转换为固定函数调用，不让不可信内容成为可执行脚本。 */
     private fun dispatchNativeMessage(rawMessage: String) {
+        // JsBridge 可被 @JavascriptInterface 线程调用，切回 WebView 的 UI 线程再检查就绪状态。
+        post {
+            if (!bridgeReady) {
+                pendingNativeMessages.addLast(rawMessage)
+            } else {
+                dispatchNow(rawMessage)
+            }
+        }
+    }
+
+    private fun dispatchNow(rawMessage: String) {
         val response = runCatching {
             json.decodeFromString(BridgeResponse.serializer(), rawMessage)
         }.getOrNull() ?: return
-        post {
-            if (response.method == null) {
-                evaluateJavascript(
-                    "window.JSBridge&&window.JSBridge._onCallback(${quoted(rawMessage)});",
-                    null,
-                )
-            } else {
-                val parameters = json.encodeToString(response.params)
-                evaluateJavascript(
-                    "window.JSBridge&&window.JSBridge.onNativeEvent(" +
-                        "${quoted(response.method)},${quoted(parameters)},${quoted(response.callbackId)});",
-                    null,
-                )
-            }
+        if (response.method == null) {
+            evaluateJavascript(
+                "window.JSBridge&&window.JSBridge._onCallback(${quoted(rawMessage)});",
+                null,
+            )
+        } else {
+            val parameters = json.encodeToString(response.params)
+            evaluateJavascript(
+                "window.JSBridge&&window.JSBridge.onNativeEvent(" +
+                    "${quoted(response.method)},${quoted(parameters)},${quoted(response.callbackId)});",
+                null,
+            )
         }
     }
 
@@ -165,6 +187,9 @@ class BridgeWebView @JvmOverloads constructor(
         path.endsWith(".jpg") || path.endsWith(".jpeg") -> "image/jpeg"
         else -> "application/octet-stream"
     }
+
+    private fun emptyResponse(): WebResourceResponse =
+        WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
 
     companion object {
         const val NATIVE_BRIDGE_NAME = "NativeBridge"
