@@ -3,6 +3,7 @@ package com.lianghonglu.bridgekit
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import com.lianghonglu.bridgekit.feature.demo.DemoRoute
 import com.lianghonglu.bridgekit.ui.theme.BridgeKitTheme
 
 /**
@@ -16,7 +17,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             BridgeKitTheme {
-                // 功能实现后由 DemoRoute 接管；这里保证项目骨架可独立构建。
+                DemoRoute()
             }
         }
     }
