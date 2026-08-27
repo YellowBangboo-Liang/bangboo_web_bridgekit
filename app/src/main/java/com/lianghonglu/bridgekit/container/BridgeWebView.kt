@@ -240,6 +240,7 @@ class BridgeWebView @JvmOverloads constructor(
                   }));
                 }
               };
+              window.dispatchEvent(new Event('bridgeReady'));
             })();
         """
     }

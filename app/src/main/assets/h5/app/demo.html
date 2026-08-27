@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BridgeKit JSBridge Demo</title>
+  <style>
+    :root { color-scheme: light; --brand:#007c86; --ink:#102a43; --wash:#eef7f8; }
+    * { box-sizing:border-box; } html,body { margin:0; }
+    body { padding:14px; color:var(--ink); font:14px/1.45 system-ui,-apple-system,"Microsoft YaHei",sans-serif; background:#fff; }
+    .tag { color:var(--brand); font-size:12px; font-weight:800; letter-spacing:.08em; }
+    h1 { margin:3px 0 10px; font-size:20px; }
+    .actions { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+    button { min-height:42px; border:1px solid var(--brand); border-radius:10px; background:var(--brand); color:#fff; font:inherit; font-weight:700; }
+    button:last-child { background:#fff; color:var(--brand); }
+    button:disabled { opacity:.55; }
+    #result { min-height:54px; margin-top:10px; padding:9px; border-radius:10px; background:var(--wash); color:#486581; font-size:12px; white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="tag">OFFLINE H5 · JSBRIDGE</div>
+  <h1>双向调用演示</h1>
+  <div class="actions">
+    <button id="device" disabled>JS → Native：设备信息</button>
+    <button id="toast" disabled>JS → Native：Toast</button>
+  </div>
+  <div id="result">等待 JSBridge 就绪…</div>
+  <script>
+    const result = document.querySelector('#result');
+    const deviceButton = document.querySelector('#device');
+    const toastButton = document.querySelector('#toast');
+    const show = value => result.textContent = value;
+    const markBridgeReady = () => {
+      deviceButton.disabled = false;
+      toastButton.disabled = false;
+      show('JSBridge 已就绪，可发起调用');
+    };
+    window.addEventListener('bridgeReady', markBridgeReady);
+    if (window.JSBridge) markBridgeReady();
+    deviceButton.onclick = async () => {
+      try { show('请求 Native device.info…\n' + await window.JSBridge.call('device.info')); }
+      catch (error) { show('调用失败：' + error.message); }
+    };
+    toastButton.onclick = async () => {
+      try { await window.JSBridge.call('toast.show', { message: '来自首页 H5 的消息' }); show('Native Toast 已显示'); }
+      catch (error) { show('调用失败：' + error.message); }
+    };
+    window.addEventListener('nativeEvent', event => {
+      show('收到 Native → JS：' + event.detail.method + '\n' + event.detail.params.message);
+    });
+  </script>
+</body>
+</html>

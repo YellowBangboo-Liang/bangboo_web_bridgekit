@@ -8,4 +8,10 @@ enum class DemoDestination {
     fun openAbout(): DemoDestination = About
 
     fun backToHome(): DemoDestination = Home
+
+    /** 每个页面独立加载自己的本地 H5，首页 Demo 不与“关于我”作品集共用文档。 */
+    fun assetPath(): String = when (this) {
+        Home -> "demo.html"
+        About -> "index.html"
+    }
 }

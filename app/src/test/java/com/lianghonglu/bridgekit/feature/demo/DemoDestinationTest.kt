@@ -15,4 +15,10 @@ class DemoDestinationTest {
     fun `About 返回后回到 Home`() {
         assertEquals(DemoDestination.Home, DemoDestination.About.backToHome())
     }
+
+    @Test
+    fun `首页和关于我使用不同的本地 H5 入口`() {
+        assertEquals("demo.html", DemoDestination.Home.assetPath())
+        assertEquals("index.html", DemoDestination.About.assetPath())
+    }
 }
