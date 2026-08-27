@@ -3,15 +3,13 @@ package com.lianghonglu.bridgekit.feature.demo
 import android.os.Build
 import android.util.Base64
 import android.widget.Toast
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -21,6 +19,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.activity.compose.BackHandler
 import com.lianghonglu.bridgekit.bridge.BridgeMethodHandler
 import com.lianghonglu.bridgekit.container.BridgeWebView
 import com.lianghonglu.bridgekit.ui.theme.BridgeKitTheme
@@ -33,6 +32,25 @@ import com.lianghonglu.bridgekit.ui.theme.BridgeKitTheme
  */
 @Composable
 fun DemoRoute(viewModel: DemoViewModel = viewModel()) {
+    val uiState by viewModel.uiState.collectAsState()
+    var destination by rememberSaveable { mutableStateOf(DemoDestination.Home) }
+
+    when (destination) {
+        DemoDestination.Home -> DemoScreen(
+            uiState = uiState,
+            onOpenAbout = { destination = destination.openAbout() },
+        )
+        DemoDestination.About -> AboutRoute(
+            viewModel = viewModel,
+            onBack = { destination = destination.backToHome() },
+        )
+    }
+}
+
+/** 只有在“关于我”页面创建 WebView；首页保持纯 Compose 滚动。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AboutRoute(viewModel: DemoViewModel, onBack: () -> Unit) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -60,24 +78,46 @@ fun DemoRoute(viewModel: DemoViewModel = viewModel()) {
             webView.release()
         }
     }
-    DemoScreen(uiState, {
-        viewModel.recordNativeEventSent("native.greeting")
-        webView.callJsMethod("native.greeting", mapOf("message" to "Hello from Jetpack Compose")) {
-            viewModel.recordNativeEventResult(it.result)
+    BackHandler(onBack = onBack)
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = { Text("关于我 · 离线作品集") },
+            navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
+            actions = {
+                TextButton(onClick = {
+                    viewModel.recordNativeEventSent("native.greeting")
+                    webView.callJsMethod("native.greeting", mapOf("message" to "Hello from Jetpack Compose")) {
+                        viewModel.recordNativeEventResult(it.result)
+                    }
+                }) { Text("发送事件") }
+            },
+        )
+        AndroidView(factory = { webView }, modifier = Modifier.weight(1f))
+        if (uiState.logs.isNotEmpty()) {
+            Text(
+                text = uiState.logs.last(),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
-    }) { AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize()) }
+    }
 }
 
-/** 可预览的纯 Compose 屏幕；以槽位隔离 Android WebView。 */
+/** 首页只呈现原生 BridgeKit 概览，末尾入口跳转到独立的“关于我”页面。 */
 @Composable
-fun DemoScreen(uiState: DemoUiState, onNativeToJs: () -> Unit, h5Content: @Composable () -> Unit) {
+fun DemoScreen(uiState: DemoUiState, onOpenAbout: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("BridgeKit", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Text("Jetpack Compose + MVVM · Android WebView · 双向 JSBridge", color = MaterialTheme.colorScheme.onSurfaceVariant)
         CapabilityGrid()
-        Button(onClick = onNativeToJs, modifier = Modifier.fillMaxWidth()) { Text("Native → JS 主动事件（等待 H5 回传）") }
-        Text("内置离线 H5 演示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Card(Modifier.fillMaxWidth().height(390.dp)) { h5Content() }
+        Text("演示说明", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Card(Modifier.fillMaxWidth()) {
+            Text(
+                "关于我页面会使用 WebViewAssetLoader 从 APK Assets 加载 Vue 作品集；信息、图片和项目档案均经过请求拦截。",
+                modifier = Modifier.padding(16.dp),
+            )
+        }
         if (uiState.logs.isNotEmpty()) {
             Text("原生侧事件日志", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
@@ -86,6 +126,9 @@ fun DemoScreen(uiState: DemoUiState, onNativeToJs: () -> Unit, h5Content: @Compo
                 }
             }
         }
+        Spacer(Modifier.height(20.dp))
+        Button(onClick = onOpenAbout, modifier = Modifier.fillMaxWidth()) { Text("关于我") }
+        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -105,4 +148,4 @@ private fun BridgeWebView.registerDemoCapabilities(viewModel: DemoViewModel) {
 }
 
 @Preview(showBackground = true, heightDp = 900)
-@Composable private fun DemoScreenPreview() { BridgeKitTheme { DemoScreen(DemoUiState(listOf("Native → JS · native.greeting", "JS → Native 回传 · handled")), {}, { Box(Modifier.fillMaxSize().background(Color(0xFFF2F5F6)), contentAlignment = Alignment.Center) { Text("WebView / Assets H5 演示区域") } }) } }
+@Composable private fun DemoScreenPreview() { BridgeKitTheme { DemoScreen(DemoUiState(listOf("Native → JS · native.greeting", "JS → Native 回传 · handled")), {}) } }
