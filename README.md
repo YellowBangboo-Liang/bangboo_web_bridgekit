@@ -2,7 +2,7 @@
 
 > 一个以 Jetpack Compose + MVVM 构建的原创 Android WebView / JSBridge Demo。
 
-BridgeKit 用一个可直接运行的离线 H5 页面，展示 Hybrid 容器开发中最常见、也最容易出问题的能力边界：协议设计、双向异步调用、能力注入、资源拦截、生命周期与安全控制。
+BridgeKit 用一个可直接运行的离线 H5 页面，展示 Hybrid 容器开发中最常见、也最容易出问题的能力边界：协议设计、双向异步调用、能力注入、资源拦截、生命周期与安全控制。首页将 H5 演示嵌入 Compose 页面；底部的“关于我”则是通往独立离线作品集的彩蛋入口。
 
 作者 / Author: **梁鸿禄**
 
@@ -16,7 +16,9 @@ BridgeKit 用一个可直接运行的离线 H5 页面，展示 Hybrid 容器开�
 | 一次性异步回调 | `CallbackRegistry`，消费后立即释放 |
 | Android 注入适配 | `NativeBridge` 的 `@JavascriptInterface` |
 | URL Scheme | `jsbridge://action?param=…` 拦截与宿主回调 |
-| 本地离线 H5 | `localh5://index.html` → `assets/h5/index.html` |
+| 首页内嵌 H5 | `demo.html`：设备信息、Toast 与 Native → JS 事件展示 |
+| 离线作品集彩蛋 | 首页底部“关于我”→ 独立加载 Vue 作品集 `index.html` |
+| 本地离线资源 | `WebViewAssetLoader` → `https://appassets.androidplatform.net/assets/...` |
 | Compose + MVVM | `DemoRoute`、`DemoViewModel`、`DemoScreenPreview` |
 
 ## Project structure
@@ -27,7 +29,10 @@ app/src/main/java/com/lianghonglu/bridgekit/
 ├── container/    # BridgeWebView：注入、导航保护、资源拦截与释放
 ├── feature/demo/ # Compose UI、Preview 和 MVVM 状态
 └── MainActivity.kt
-app/src/main/assets/h5/index.html  # 内置离线 H5 演示
+app/src/main/assets/h5/app/
+├── demo.html                       # 首页内嵌的轻量 JSBridge H5 演示
+├── index.html                      # “关于我”页的离线 Vue 作品集
+└── portfolio.json                  # 作品集数据
 ```
 
 ## Run
@@ -43,10 +48,12 @@ $env:JAVA_HOME = 'C:\Path\To\JDK-17'
 
 生成的 APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。
 
-启动后可验证：
+启动后可按下面顺序体验：
 
-- 内置 H5 的设备信息、Base64、Toast 与 URL Scheme 按钮；
-- Compose 顶部的“Native → JS”按钮和 H5 回传；
+- 首页内嵌 H5 的“设备信息”和 Toast 按钮（JS → Native）；
+- 首页的“Native → JS 主动事件”按钮，H5 会显示事件内容；
+- 从 H5 卡片区域纵向拖动，仍可滚动整个首页；
+- 底部“关于我”进入离线 Vue 作品集，并可从顶部返回；
 - Compose 中记录的 Native 侧事件日志；
 - Android Studio 中的 `DemoScreenPreview`（不需要 WebView 也能预览 UI）。
 
@@ -65,7 +72,7 @@ $env:JAVA_HOME = 'C:\Path\To\JDK-17'
 
 ## Security notes
 
-`@JavascriptInterface` 只能暴露给可信内容。本 Demo 只允许 `localh5://` 的内置资源加载；所有其他导航都会被拦截。Native→JS 的参数使用 JSON 字符串字面量编码，而不是拼接不可信的可执行 JavaScript。实际项目还应结合业务场景加入域名白名单、方法权限、签名校验和离线包完整性校验。
+`@JavascriptInterface` 只能暴露给可信内容。本 Demo 只允许 `https://appassets.androidplatform.net/assets/` 下的内置资源加载；所有其他导航都会被拦截。Native→JS 的参数使用 JSON 字符串字面量编码，而不是拼接不可信的可执行 JavaScript。实际项目还应结合业务场景加入域名白名单、方法权限、签名校验和离线包完整性校验。
 
 ## Tests
 
