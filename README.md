@@ -1,8 +1,27 @@
-# 从一次 WebView 调用开始：Android JSBridge 的最小实践
+<div align="center">
 
-> 一个面向 Android 与前端开发者的 JSBridge / WebView 交互案例。它不是 SDK，也不试图成为通用框架；目标是把一条双向调用链，以及它背后的协议、安全与生命周期取舍讲清楚。
+# BridgeKit
 
-作者 / Author: **梁鸿禄**
+### 从一次 WebView 调用开始，拆解 Android JSBridge 的双向交互
+
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
+[![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Android-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![Android API](https://img.shields.io/badge/minSdk-24-3DDC84?logo=android&logoColor=white)](https://developer.android.com/about/versions/nougat)
+[![License](https://img.shields.io/badge/License-MIT-00A98F.svg)](LICENSE)
+
+**一个面向 Android 与前端开发者的 WebView / JSBridge 技术案例。**<br />
+双向通信 · Promise 回调 · 可信离线 H5 · 请求拦截 · 生命周期治理
+
+[快速体验](#运行与验证) · [阅读案例](#先看最终链路) · [代码地图](#代码地图从案例回到工程)
+
+</div>
+
+> [!NOTE]
+> 这不是 SDK，也不试图成为通用框架。BridgeKit 的目标是用一条可以跑通的双向调用链，讲清协议、安全与生命周期的工程取舍。
+
+<br />
+
+**作者：** 梁鸿禄 · **定位：** Android Native × Web / Hybrid 交互实践
 
 当一个 Android 页面内嵌 H5 时，真正困难的往往不是“让 JavaScript 调一下 Android”，而是回答这些问题：
 
@@ -13,6 +32,13 @@
 - 页面重载、Activity 切后台或销毁时，没完成的回调怎么办？
 
 这个仓库用一个很小的可运行 Demo 回答这些问题。首页包含 H5 发起的“设备信息 / Toast”调用与 Native 主动事件；底部“关于我”是一个独立离线作品集入口。它们共享同一个受控 WebView 容器，但业务能力由宿主页面注册。
+
+| 你会看到什么 | 对应实现 |
+| --- | --- |
+| JS → Native | JSON 请求、方法白名单、Promise resolve / reject |
+| Native → JS | DOM `CustomEvent` 与可选的一次性回调 |
+| 可信 WebView 容器 | AssetLoader、导航控制、子资源拦截与 JS 注入 |
+| Compose 宿主集成 | 生命周期释放、事件日志与嵌套滚动手势交接 |
 
 ## 先看最终链路
 
