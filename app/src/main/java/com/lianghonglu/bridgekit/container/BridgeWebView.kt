@@ -8,6 +8,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebViewAssetLoader
 import com.lianghonglu.bridgekit.bridge.BridgeResponse
 import com.lianghonglu.bridgekit.bridge.JsBridge
 import com.lianghonglu.bridgekit.bridge.NativeBridge
@@ -33,6 +34,9 @@ class BridgeWebView @JvmOverloads constructor(
     var onSchemeAction: ((action: String, parameter: String?) -> Unit)? = null
 
     private val json = Json { ignoreUnknownKeys = true }
+    private val assetLoader = WebViewAssetLoader.Builder()
+        .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
+        .build()
     // 仅在 WebView UI 线程访问：页面 reload / bootstrap 尚未完成时暂存 Native 事件。
     private val pendingNativeMessages = ArrayDeque<String>()
     private var bridgeReady = false
@@ -47,11 +51,11 @@ class BridgeWebView @JvmOverloads constructor(
         addJavascriptInterface(NativeBridge(jsBridge), NATIVE_BRIDGE_NAME)
     }
 
-    /** 加载 assets/h5 下的内置页面；不接受路径分隔符，杜绝目录穿越。 */
-    fun loadLocalH5(assetName: String = DEFAULT_ASSET) {
-        require(isSafeAssetName(assetName)) { "Invalid local asset name" }
+    /** 加载 `assets/h5/app/` 下的离线应用入口；使用伪 HTTPS origin 以支持 Fetch API。 */
+    fun loadLocalH5(assetPath: String = DEFAULT_ASSET) {
+        require(isSafeAssetPath(assetPath)) { "Invalid local asset path" }
         bridgeReady = false
-        loadUrl("$LOCAL_H5_SCHEME://$assetName")
+        loadUrl("https://$ASSET_HOST/assets/h5/app/$assetPath")
     }
 
     /** Native → JS 事件；H5 可监听 nativeEvent，并可通过 callback 得到处理结果。 */
@@ -104,7 +108,7 @@ class BridgeWebView @JvmOverloads constructor(
                     url.host?.let { action -> onSchemeAction?.invoke(action, url.getQueryParameter("param")) }
                     true
                 }
-                LOCAL_H5_SCHEME -> !isSafeAssetName(url.host.orEmpty())
+                "https" -> !(url.host == ASSET_HOST && isSafeLocalUrl(url))
                 // Demo 是离线、可信页面，阻止外跳即可保证接口不会被第三方页面使用。
                 else -> true
             }
@@ -117,20 +121,15 @@ class BridgeWebView @JvmOverloads constructor(
             val url = request.url
             // addJavascriptInterface 会被所有 frame 看到；阻断远程子资源/iframe，
             // 防止受信任的离线页面意外引入第三方内容后扩大接口暴露面。
-            if (url.scheme != LOCAL_H5_SCHEME) {
+            if (!(url.scheme == "https" && url.host == ASSET_HOST)) {
                 return if (url.scheme == "http" || url.scheme == "https") emptyResponse() else null
             }
-            val asset = url.host.orEmpty()
-            if (!isSafeAssetName(asset)) return null
-            return runCatching {
-                val path = "h5/$asset"
-                WebResourceResponse(guessMimeType(path), "UTF-8", context.assets.open(path))
-            }.getOrNull()
+            return assetLoader.shouldInterceptRequest(url)
         }
 
         override fun onPageFinished(view: WebView, url: String) {
             super.onPageFinished(view, url)
-            if (url.startsWith("$LOCAL_H5_SCHEME://")) injectBootstrap()
+            if (url.startsWith("https://$ASSET_HOST/assets/h5/app/")) injectBootstrap()
         }
     }
 
@@ -176,11 +175,23 @@ class BridgeWebView @JvmOverloads constructor(
     /** 利用 kotlinx.serialization 输出 JavaScript 可安全接收的 JSON 字符串字面量。 */
     private fun quoted(value: String?): String = json.encodeToString(value ?: "")
 
-    private fun isSafeAssetName(name: String): Boolean =
-        name.matches(Regex("[A-Za-z0-9._-]+\\.(html|js|css|png|jpg|jpeg)"))
+    /** 将 `https://bridgekit.local/<path>` 映射为 Assets 相对路径，拒绝 query、编码绕过和目录穿越。 */
+    private fun localAssetPath(url: android.net.Uri): String? {
+        if (url.host != ASSET_HOST || url.query != null) return null
+        val path = url.encodedPath?.removePrefix("/assets/h5/app/") ?: return null
+        return path.takeIf(::isSafeAssetPath)
+    }
+
+    private fun isSafeLocalUrl(url: android.net.Uri): Boolean = localAssetPath(url) != null
+
+    private fun isSafeAssetPath(path: String): Boolean =
+        path.matches(Regex("[A-Za-z0-9._/-]+\\.(html|js|css|json|md|png|jpg|jpeg)")) &&
+            !path.contains("..") && !path.startsWith("/")
 
     private fun guessMimeType(path: String): String = when {
         path.endsWith(".html") -> "text/html"
+        path.endsWith(".json") -> "application/json"
+        path.endsWith(".md") -> "text/markdown"
         path.endsWith(".js") -> "application/javascript"
         path.endsWith(".css") -> "text/css"
         path.endsWith(".png") -> "image/png"
@@ -194,7 +205,7 @@ class BridgeWebView @JvmOverloads constructor(
     companion object {
         const val NATIVE_BRIDGE_NAME = "NativeBridge"
         const val SCHEME_BRIDGE = "jsbridge"
-        const val LOCAL_H5_SCHEME = "localh5"
+        const val ASSET_HOST = "bridgekit.local"
         const val DEFAULT_ASSET = "index.html"
 
         /**
